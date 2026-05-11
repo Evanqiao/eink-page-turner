@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting } from 'obsidian';
 import type EinkPageTurnerPlugin from './main';
 
 export interface EinkPageTurnerSettings {
+	enablePlugin: boolean;
 	leftZonePercentage: number;
 	rightZonePercentage: number;
 	maxClickDistance: number;
@@ -11,6 +12,7 @@ export interface EinkPageTurnerSettings {
 }
 
 export const DEFAULT_SETTINGS: EinkPageTurnerSettings = {
+	enablePlugin: false,
 	leftZonePercentage: 0.25,
 	rightZonePercentage: 0.25,
 	maxClickDistance: 20,
@@ -32,6 +34,16 @@ export class EinkPageTurnerSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		containerEl.createEl('h2', { text: '墨水屏翻页设置' });
+
+		new Setting(containerEl)
+			.setName('启用插件')
+			.setDesc('开启后，在 Markdown 阅读模式下点击屏幕左右侧可翻页')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enablePlugin)
+				.onChange(async (value) => {
+					this.plugin.settings.enablePlugin = value;
+					await this.plugin.saveSettings();
+				}));
 
 		new Setting(containerEl)
 			.setName('左侧点击区域比例')

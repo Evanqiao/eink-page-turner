@@ -1,4 +1,4 @@
-import { Plugin, MarkdownView, Notice } from 'obsidian';
+import { Plugin, MarkdownView } from 'obsidian';
 import {
 	EinkPageTurnerSettingTab,
 	DEFAULT_SETTINGS,
@@ -16,17 +16,6 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		this.addSettingTab(new EinkPageTurnerSettingTab(this.app, this));
 
 		this.registerTouchEvents();
-
-		new Notice('E-Ink Page Turner 已加载');
-
-		this.registerEvent(
-			this.app.workspace.on('active-leaf-change', () => {
-				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (view) {
-					console.log('[E-Ink] view type:', view.getViewType(), 'mode:', view.getMode());
-				}
-			})
-		);
 	}
 
 	async loadSettings() {
@@ -41,7 +30,7 @@ export default class EinkPageTurnerPlugin extends Plugin {
 
 	private registerTouchEvents() {
 		this.registerDomEvent(document, 'touchstart', (e: TouchEvent) => {
-			if (!this.isInReadingMode()) return;
+			if (!this.isActive()) return;
 
 			const touch = e.changedTouches[0];
 			this.touchStartX = touch.clientX;
@@ -50,12 +39,7 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		}, { passive: true });
 
 		this.registerDomEvent(document, 'touchend', (e: TouchEvent) => {
-			const inReading = this.isInReadingMode();
-
-			if (!inReading) {
-				console.log('[E-Ink] touchend but NOT in reading mode');
-				return;
-			}
+			if (!this.isActive()) return;
 
 			const touch = e.changedTouches[0];
 			const touchEndX = touch.clientX;
@@ -71,17 +55,16 @@ export default class EinkPageTurnerPlugin extends Plugin {
 				deltaY < this.settings.maxClickDistance &&
 				deltaTime < this.settings.maxClickDuration
 			) {
-				new Notice(`[E-Ink] 点击检测 ✓ x:${Math.round(touchEndX)} y:${Math.round(touchEndY)}`);
 				this.handlePageTurn(touchEndX, e);
-			} else {
-				new Notice(`[E-Ink] 滑动忽略 dX:${Math.round(deltaX)} dY:${Math.round(deltaY)} t:${deltaTime}ms`);
 			}
 		}, { passive: false });
 	}
 
-	// ── Mode detection ──────────────────────────────────────────────
+	// ── Gating ──────────────────────────────────────────────────────
 
-	private isInReadingMode(): boolean {
+	private isActive(): boolean {
+		if (!this.settings.enablePlugin) return false;
+
 		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!activeView) return false;
 
@@ -94,8 +77,6 @@ export default class EinkPageTurnerPlugin extends Plugin {
 	// ── Page turn logic ─────────────────────────────────────────────
 
 	private getScrollContainer(view: MarkdownView): HTMLElement {
-		// Try multiple selectors that could be the scrollable element.
-		// Different themes (e.g. Minimal) may restructure the DOM.
 		const selectors = [
 			'.markdown-reading-view',
 			'.markdown-preview-view',
@@ -108,17 +89,7 @@ export default class EinkPageTurnerPlugin extends Plugin {
 				return el;
 			}
 		}
-		// Fallback: use containerEl
 		return view.containerEl;
-	}
-
-	private showScrollDiagnostics(scroller: HTMLElement) {
-		const style = window.getComputedStyle(scroller);
-		new Notice(
-			`scroller: .${scroller.className.split(' ')[0] || '(none)'}\n` +
-			`overflow-y: ${style.overflowY}  scrollH: ${scroller.scrollHeight}  clientH: ${scroller.clientHeight}`,
-			5000
-		);
 	}
 
 	private handlePageTurn(clickX: number, e: TouchEvent) {
@@ -131,7 +102,6 @@ export default class EinkPageTurnerPlugin extends Plugin {
 			target.closest('button') ||
 			target.classList.contains('clickable-icon')
 		) {
-			console.log('[E-Ink] skip interactive element:', target.tagName);
 			return;
 		}
 
@@ -139,23 +109,14 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		const leftZoneWidth = screenWidth * this.settings.leftZonePercentage;
 		const rightZoneWidth = screenWidth * this.settings.rightZonePercentage;
 
-		console.log('[E-Ink] clickX:', clickX,
-			'screenWidth:', screenWidth,
-			'leftZone:', leftZoneWidth,
-			'rightZone:', rightZoneWidth);
-
 		if (clickX < leftZoneWidth) {
-			new Notice('向上翻页');
 			this.turnPageUp();
 			e.preventDefault();
 			e.stopPropagation();
 		} else if (clickX > screenWidth - rightZoneWidth) {
-			new Notice('向下翻页');
 			this.turnPageDown();
 			e.preventDefault();
 			e.stopPropagation();
-		} else {
-			console.log('[E-Ink] middle zone, no action');
 		}
 	}
 
@@ -166,8 +127,6 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		const scroller = this.getScrollContainer(view);
 		const viewportHeight = scroller.clientHeight;
 		const scrollAmount = viewportHeight - this.settings.overlapPixels;
-
-		this.showScrollDiagnostics(scroller);
 
 		scroller.scrollTo({
 			top: scroller.scrollTop + scrollAmount,
@@ -182,8 +141,6 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		const scroller = this.getScrollContainer(view);
 		const viewportHeight = scroller.clientHeight;
 		const scrollAmount = viewportHeight - this.settings.overlapPixels;
-
-		this.showScrollDiagnostics(scroller);
 
 		scroller.scrollTo({
 			top: Math.max(0, scroller.scrollTop - scrollAmount),
