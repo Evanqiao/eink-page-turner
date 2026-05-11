@@ -1,4 +1,4 @@
-import { Plugin, MarkdownView } from 'obsidian';
+import { Plugin, MarkdownView, Notice } from 'obsidian';
 import {
 	EinkPageTurnerSettingTab,
 	DEFAULT_SETTINGS,
@@ -17,9 +17,14 @@ export default class EinkPageTurnerPlugin extends Plugin {
 
 		this.registerTouchEvents();
 
+		new Notice('E-Ink Page Turner 已加载');
+
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
-				// Event listeners are always active; isInReadingMode() gates behavior
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (view) {
+					console.log('[E-Ink] view type:', view.getViewType(), 'mode:', view.getMode());
+				}
 			})
 		);
 	}
@@ -45,7 +50,11 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		}, { passive: true });
 
 		this.registerDomEvent(document, 'touchend', (e: TouchEvent) => {
-			if (!this.isInReadingMode()) return;
+			const inReading = this.isInReadingMode();
+			console.log('[E-Ink] touchend, inReading:', inReading,
+				'touchStartX:', this.touchStartX);
+
+			if (!inReading) return;
 
 			const touch = e.changedTouches[0];
 			const touchEndX = touch.clientX;
@@ -56,12 +65,18 @@ export default class EinkPageTurnerPlugin extends Plugin {
 			const deltaY = Math.abs(touchEndY - this.touchStartY);
 			const deltaTime = touchEndTime - this.touchStartTime;
 
+			console.log('[E-Ink] deltaX:', deltaX, 'deltaY:', deltaY,
+				'deltaTime:', deltaTime,
+				'limits:', this.settings.maxClickDistance, this.settings.maxClickDuration);
+
 			if (
 				deltaX < this.settings.maxClickDistance &&
 				deltaY < this.settings.maxClickDistance &&
 				deltaTime < this.settings.maxClickDuration
 			) {
 				this.handlePageTurn(touchEndX, e);
+			} else {
+				console.log('[E-Ink] NOT a click (swipe/move)');
 			}
 		}, { passive: false });
 	}
@@ -101,6 +116,7 @@ export default class EinkPageTurnerPlugin extends Plugin {
 			target.closest('button') ||
 			target.classList.contains('clickable-icon')
 		) {
+			console.log('[E-Ink] skip interactive element:', target.tagName);
 			return;
 		}
 
@@ -108,42 +124,65 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		const leftZoneWidth = screenWidth * this.settings.leftZonePercentage;
 		const rightZoneWidth = screenWidth * this.settings.rightZonePercentage;
 
+		console.log('[E-Ink] clickX:', clickX,
+			'screenWidth:', screenWidth,
+			'leftZone:', leftZoneWidth,
+			'rightZone:', rightZoneWidth);
+
 		if (clickX < leftZoneWidth) {
+			new Notice('向上翻页');
 			this.turnPageUp();
 			e.preventDefault();
 			e.stopPropagation();
 		} else if (clickX > screenWidth - rightZoneWidth) {
+			new Notice('向下翻页');
 			this.turnPageDown();
 			e.preventDefault();
 			e.stopPropagation();
+		} else {
+			console.log('[E-Ink] middle zone, no action');
 		}
 	}
 
 	private turnPageDown() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view) return;
+		if (!view) { console.log('[E-Ink] turnPageDown: no view'); return; }
 
 		const scroller = this.getScrollContainer(view);
 		const viewportHeight = scroller.clientHeight;
 		const scrollAmount = viewportHeight - this.settings.overlapPixels;
+
+		console.log('[E-Ink] turnPageDown scroller:', scroller.className,
+			'scrollHeight:', scroller.scrollHeight,
+			'scrollTop before:', scroller.scrollTop,
+			'viewport:', viewportHeight);
 
 		scroller.scrollTo({
 			top: scroller.scrollTop + scrollAmount,
 			behavior: 'auto',
 		});
+
+		console.log('[E-Ink] scrollTop after:', scroller.scrollTop, 'target:', scroller.scrollTop + scrollAmount);
 	}
 
 	private turnPageUp() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view) return;
+		if (!view) { console.log('[E-Ink] turnPageUp: no view'); return; }
 
 		const scroller = this.getScrollContainer(view);
 		const viewportHeight = scroller.clientHeight;
 		const scrollAmount = viewportHeight - this.settings.overlapPixels;
 
+		console.log('[E-Ink] turnPageUp scroller:', scroller.className,
+			'scrollHeight:', scroller.scrollHeight,
+			'scrollTop before:', scroller.scrollTop,
+			'viewport:', viewportHeight);
+
 		scroller.scrollTo({
 			top: Math.max(0, scroller.scrollTop - scrollAmount),
 			behavior: 'auto',
 		});
+
+		console.log('[E-Ink] scrollTop after:', scroller.scrollTop);
 	}
 }
