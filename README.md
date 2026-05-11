@@ -21,7 +21,12 @@
 
 ### 通过 BRAT 安装
 
-添加 Beta 测试仓库地址：`https://github.com/Evanqiao/eink-page-turner`
+1. 在 Obsidian 社区插件库中搜索 **BRAT** 并启用
+2. 打开 BRAT 设置，点击 **Add Beta plugin**
+3. 输入仓库地址：`Evanqiao/eink-page-turner`
+4. BRAT 会自动下载插件文件并在 Obsidian 中启用
+
+> 每次打开 Obsidian 时 BRAT 会自动检查更新。
 
 ## 设置
 
