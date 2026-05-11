@@ -1,7 +1,7 @@
 {
 	"id": "eink-page-turner",
 	"name": "E-Ink Page Turner",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"minAppVersion": "0.15.0",
 	"description": "专为安卓墨水屏设备优化的阅读翻页插件，点击屏幕左右侧翻页",
 	"author": "",
