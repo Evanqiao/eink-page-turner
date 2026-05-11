@@ -1,0 +1,27 @@
+{
+	"name": "obsidian-eink-page-turner",
+	"version": "1.0.0",
+	"description": "专为安卓墨水屏设备优化的阅读翻页插件，点击屏幕左右侧翻页",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"version": "node version-bump.mjs && git add manifest.json versions.json"
+	},
+	"keywords": [
+		"obsidian",
+		"eink",
+		"page-turner",
+		"android"
+	],
+	"author": "",
+	"license": "MIT",
+	"devDependencies": {
+		"@types/node": "^20.11.0",
+		"builtin-modules": "^3.3.0",
+		"esbuild": "^0.20.0",
+		"obsidian": "latest",
+		"tslib": "^2.6.2",
+		"typescript": "^5.3.3"
+	}
+}

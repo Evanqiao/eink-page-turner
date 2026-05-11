@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output (main.js is bundled but we keep it for plugin distribution)
+# Uncomment if you prefer to not track the built file:
+# main.js
+# main.js.map
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Obsidian test vault
+test-vault/
