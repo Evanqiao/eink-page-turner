@@ -57,7 +57,7 @@ export default class EinkPageTurnerPlugin extends Plugin {
 			) {
 				this.handlePageTurn(touchEndX, e);
 			}
-		}, { passive: false });
+		}, { passive: true });
 	}
 
 	// ── Gating ──────────────────────────────────────────────────────
@@ -111,12 +111,8 @@ export default class EinkPageTurnerPlugin extends Plugin {
 
 		if (clickX < leftZoneWidth) {
 			this.turnPageUp();
-			e.preventDefault();
-			e.stopPropagation();
 		} else if (clickX > screenWidth - rightZoneWidth) {
 			this.turnPageDown();
-			e.preventDefault();
-			e.stopPropagation();
 		}
 	}
 
