@@ -51,10 +51,11 @@ export default class EinkPageTurnerPlugin extends Plugin {
 
 		this.registerDomEvent(document, 'touchend', (e: TouchEvent) => {
 			const inReading = this.isInReadingMode();
-			console.log('[E-Ink] touchend, inReading:', inReading,
-				'touchStartX:', this.touchStartX);
 
-			if (!inReading) return;
+			if (!inReading) {
+				console.log('[E-Ink] touchend but NOT in reading mode');
+				return;
+			}
 
 			const touch = e.changedTouches[0];
 			const touchEndX = touch.clientX;
@@ -65,18 +66,15 @@ export default class EinkPageTurnerPlugin extends Plugin {
 			const deltaY = Math.abs(touchEndY - this.touchStartY);
 			const deltaTime = touchEndTime - this.touchStartTime;
 
-			console.log('[E-Ink] deltaX:', deltaX, 'deltaY:', deltaY,
-				'deltaTime:', deltaTime,
-				'limits:', this.settings.maxClickDistance, this.settings.maxClickDuration);
-
 			if (
 				deltaX < this.settings.maxClickDistance &&
 				deltaY < this.settings.maxClickDistance &&
 				deltaTime < this.settings.maxClickDuration
 			) {
+				new Notice(`[E-Ink] 点击检测 ✓ x:${Math.round(touchEndX)} y:${Math.round(touchEndY)}`);
 				this.handlePageTurn(touchEndX, e);
 			} else {
-				console.log('[E-Ink] NOT a click (swipe/move)');
+				new Notice(`[E-Ink] 滑动忽略 dX:${Math.round(deltaX)} dY:${Math.round(deltaY)} t:${deltaTime}ms`);
 			}
 		}, { passive: false });
 	}
