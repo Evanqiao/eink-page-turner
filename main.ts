@@ -63,7 +63,7 @@ export default class EinkPageTurnerPlugin extends Plugin {
 			) {
 				this.handlePageTurn(touchEndX, e);
 			}
-		}, { passive: true });
+		}, { passive: false });
 	}
 
 	// ── Mode detection ──────────────────────────────────────────────
@@ -79,6 +79,17 @@ export default class EinkPageTurnerPlugin extends Plugin {
 	}
 
 	// ── Page turn logic ─────────────────────────────────────────────
+
+	private getScrollContainer(view: MarkdownView): HTMLElement {
+		// In reading mode, Obsidian puts overflow on .markdown-reading-view,
+		// not on contentEl. contentEl.scrollTo() is a no-op.
+		const readingView = view.containerEl.querySelector(
+			'.markdown-reading-view'
+		) as HTMLElement | null;
+		if (readingView) return readingView;
+		// Fallback: try the containerEl itself (mobile may differ)
+		return view.containerEl;
+	}
 
 	private handlePageTurn(clickX: number, e: TouchEvent) {
 		const target = e.target as HTMLElement;
@@ -112,12 +123,12 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) return;
 
-		const contentEl = view.contentEl;
-		const viewportHeight = contentEl.clientHeight;
+		const scroller = this.getScrollContainer(view);
+		const viewportHeight = scroller.clientHeight;
 		const scrollAmount = viewportHeight - this.settings.overlapPixels;
 
-		contentEl.scrollTo({
-			top: contentEl.scrollTop + scrollAmount,
+		scroller.scrollTo({
+			top: scroller.scrollTop + scrollAmount,
 			behavior: 'auto',
 		});
 	}
@@ -126,12 +137,12 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) return;
 
-		const contentEl = view.contentEl;
-		const viewportHeight = contentEl.clientHeight;
+		const scroller = this.getScrollContainer(view);
+		const viewportHeight = scroller.clientHeight;
 		const scrollAmount = viewportHeight - this.settings.overlapPixels;
 
-		contentEl.scrollTo({
-			top: Math.max(0, contentEl.scrollTop - scrollAmount),
+		scroller.scrollTo({
+			top: Math.max(0, scroller.scrollTop - scrollAmount),
 			behavior: 'auto',
 		});
 	}
