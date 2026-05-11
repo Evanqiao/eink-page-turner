@@ -94,14 +94,31 @@ export default class EinkPageTurnerPlugin extends Plugin {
 	// ── Page turn logic ─────────────────────────────────────────────
 
 	private getScrollContainer(view: MarkdownView): HTMLElement {
-		// In reading mode, Obsidian puts overflow on .markdown-reading-view,
-		// not on contentEl. contentEl.scrollTo() is a no-op.
-		const readingView = view.containerEl.querySelector(
-			'.markdown-reading-view'
-		) as HTMLElement | null;
-		if (readingView) return readingView;
-		// Fallback: try the containerEl itself (mobile may differ)
+		// Try multiple selectors that could be the scrollable element.
+		// Different themes (e.g. Minimal) may restructure the DOM.
+		const selectors = [
+			'.markdown-reading-view',
+			'.markdown-preview-view',
+			'.cm-scroller',
+			'.view-content',
+		];
+		for (const sel of selectors) {
+			const el = view.containerEl.querySelector(sel) as HTMLElement | null;
+			if (el && el.scrollHeight > el.clientHeight) {
+				return el;
+			}
+		}
+		// Fallback: use containerEl
 		return view.containerEl;
+	}
+
+	private showScrollDiagnostics(scroller: HTMLElement) {
+		const style = window.getComputedStyle(scroller);
+		new Notice(
+			`scroller: .${scroller.className.split(' ')[0] || '(none)'}\n` +
+			`overflow-y: ${style.overflowY}  scrollH: ${scroller.scrollHeight}  clientH: ${scroller.clientHeight}`,
+			5000
+		);
 	}
 
 	private handlePageTurn(clickX: number, e: TouchEvent) {
@@ -144,43 +161,33 @@ export default class EinkPageTurnerPlugin extends Plugin {
 
 	private turnPageDown() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view) { console.log('[E-Ink] turnPageDown: no view'); return; }
+		if (!view) return;
 
 		const scroller = this.getScrollContainer(view);
 		const viewportHeight = scroller.clientHeight;
 		const scrollAmount = viewportHeight - this.settings.overlapPixels;
 
-		console.log('[E-Ink] turnPageDown scroller:', scroller.className,
-			'scrollHeight:', scroller.scrollHeight,
-			'scrollTop before:', scroller.scrollTop,
-			'viewport:', viewportHeight);
+		this.showScrollDiagnostics(scroller);
 
 		scroller.scrollTo({
 			top: scroller.scrollTop + scrollAmount,
 			behavior: 'auto',
 		});
-
-		console.log('[E-Ink] scrollTop after:', scroller.scrollTop, 'target:', scroller.scrollTop + scrollAmount);
 	}
 
 	private turnPageUp() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view) { console.log('[E-Ink] turnPageUp: no view'); return; }
+		if (!view) return;
 
 		const scroller = this.getScrollContainer(view);
 		const viewportHeight = scroller.clientHeight;
 		const scrollAmount = viewportHeight - this.settings.overlapPixels;
 
-		console.log('[E-Ink] turnPageUp scroller:', scroller.className,
-			'scrollHeight:', scroller.scrollHeight,
-			'scrollTop before:', scroller.scrollTop,
-			'viewport:', viewportHeight);
+		this.showScrollDiagnostics(scroller);
 
 		scroller.scrollTo({
 			top: Math.max(0, scroller.scrollTop - scrollAmount),
 			behavior: 'auto',
 		});
-
-		console.log('[E-Ink] scrollTop after:', scroller.scrollTop);
 	}
 }
