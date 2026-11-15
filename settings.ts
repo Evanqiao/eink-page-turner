@@ -1,8 +1,11 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type EinkPageTurnerPlugin from './main';
+import { DEFAULT_POSITION_FILE } from './positions';
 
 export interface EinkPageTurnerSettings {
 	enablePlugin: boolean;
+	rememberReadingPosition: boolean;
+	positionFilePath: string;
 	leftZonePercentage: number;
 	rightZonePercentage: number;
 	maxClickDistance: number;
@@ -13,6 +16,8 @@ export interface EinkPageTurnerSettings {
 
 export const DEFAULT_SETTINGS: EinkPageTurnerSettings = {
 	enablePlugin: false,
+	rememberReadingPosition: true,
+	positionFilePath: DEFAULT_POSITION_FILE,
 	leftZonePercentage: 0.25,
 	rightZonePercentage: 0.25,
 	maxClickDistance: 20,
@@ -43,6 +48,29 @@ export class EinkPageTurnerSettingTab extends PluginSettingTab {
 				.onChange(async (value) => {
 					this.plugin.settings.enablePlugin = value;
 					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('记住阅读位置')
+			.setDesc('记录每篇笔记在阅读模式下滚动到的位置，重新打开时自动恢复。记录保存在库内 JSON 文件中，可随 Obsidian Sync 等同步。')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.rememberReadingPosition)
+				.onChange(async (value) => {
+					this.plugin.settings.rememberReadingPosition = value;
+					await this.plugin.saveSettings();
+					if (!value) await this.plugin.store.flush();
+				}));
+
+		new Setting(containerEl)
+			.setName('位置文件路径')
+			.setDesc('相对于库根目录的 JSON 文件。请使用普通文件夹：Obsidian Sync 不会同步以 . 开头的隐藏文件夹。留空则使用默认路径。')
+			.addText(text => text
+				.setPlaceholder(DEFAULT_POSITION_FILE)
+				.setValue(this.plugin.settings.positionFilePath)
+				.onChange(async (value) => {
+					this.plugin.settings.positionFilePath = value.trim();
+					await this.plugin.saveSettings();
+					this.plugin.schedulePositionPathApply();
 				}));
 
 		new Setting(containerEl)
