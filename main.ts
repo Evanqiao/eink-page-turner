@@ -11,20 +11,31 @@ import {
 	type PositionEntry,
 } from './positions';
 
+const MAX_RESTORE_ATTEMPTS = 24;
+const CONTENT_GATE_ATTEMPTS = 8;
+
 interface ViewState {
 	path: string;
 	/** 本次打开是否已经尝试过恢复（恢复成功、失败或被用户打断都算）。 */
 	restored: boolean;
 	loading: boolean;
+	/** 本次打开的时间，用来判断用户在打开之后是否已经操作过。 */
+	openedAt: number;
 }
 
 interface RestoreSession {
 	view: MarkdownView;
 	file: TFile;
 	entry: PositionEntry;
+	/** 打开时从文件读到的内容，用来确认阅读视图已经切换到新笔记，而不是还显示上一篇。 */
+	expectedContent: string | null;
+	/** 打开瞬间阅读视图里的内容，用来识别内容是否已经切换过。 */
+	initialPreviewText: string | null;
 	attempts: number;
 	lastHeight: number;
 	stable: number;
+	/** 第一次真正设置滚动位置的 attempt 序号，用来限制反复纠偏的次数。 */
+	appliedAttempt: number | null;
 	/** 上一次由本插件设置的 scrollTop，用来发现其他程序/用户改变过滚动位置。 */
 	lastApplied: number | null;
 	timer: number | null;
@@ -41,6 +52,7 @@ export default class EinkPageTurnerPlugin extends Plugin {
 
 	private viewStates = new WeakMap<MarkdownView, ViewState>();
 	private restoreSession: RestoreSession | null = null;
+	private lastUserInputAt = 0;
 
 	private anchorTimer: number | null = null;
 	private anchorTarget: { view: MarkdownView; path: string } | null = null;
@@ -149,9 +161,25 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		this.registerDomEvent(document, 'visibilitychange', () => {
 			if (document.hidden) void this.store.flush();
 		});
+		// 移动端切后台/被系统回收前不一定触发 beforeunload，多听几个事件。
+		this.registerDomEvent(window, 'pagehide', () => {
+			void this.store.flush();
+		});
+		this.registerDomEvent(window, 'blur', () => {
+			void this.store.flush();
+		});
 		this.registerDomEvent(window, 'beforeunload', () => {
 			void this.store.flush();
 		});
+
+		// 用户操作时间戳：打开笔记后如果用户已经滚动/点击/按键，就不再强行恢复位置。
+		const markUserInput = () => {
+			this.lastUserInputAt = Date.now();
+		};
+		this.registerDomEvent(document, 'wheel', markUserInput, { capture: true, passive: true });
+		this.registerDomEvent(document, 'touchstart', markUserInput, { capture: true, passive: true });
+		this.registerDomEvent(document, 'mousedown', markUserInput, { capture: true, passive: true });
+		this.registerDomEvent(document, 'keydown', markUserInput, { capture: true, passive: true });
 
 		this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
 			if (!this.settings.rememberReadingPosition) return;
@@ -275,7 +303,7 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		const path = view.file?.path ?? '';
 		let state = this.viewStates.get(view);
 		if (!state || state.path !== path) {
-			state = { path, restored: false, loading: false };
+			state = { path, restored: false, loading: false, openedAt: Date.now() };
 			this.viewStates.set(view, state);
 		}
 		return state;
@@ -294,7 +322,11 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		if (session && session.view === view && session.file.path === file.path) return;
 
 		state.loading = true;
-		void this.store.get(file.path).then((entry) => {
+		// 同时读取位置记录和笔记内容：后者用于确认阅读视图已经切换到了新笔记。
+		void Promise.all([
+			this.store.get(file.path),
+			this.app.vault.cachedRead(file).catch(() => null),
+		]).then(([entry, content]) => {
 			if (this.viewStates.get(view) !== state) return;
 
 			if (!entry) {
@@ -303,28 +335,36 @@ export default class EinkPageTurnerPlugin extends Plugin {
 			}
 			if (view.file?.path !== file.path || view.getMode() !== 'preview') return;
 			if (!this.settings.rememberReadingPosition) return;
-			if (this.getScrollContainer(view).scrollTop > 4) {
-				// 读取位置期间用户已经开始滚动了，不要把他拽回去。
+			if (this.lastUserInputAt > state.openedAt) {
+				// 打开笔记后用户已经开始操作，不要把他拽回去。
 				state.restored = true;
 				return;
 			}
 
-			this.startRestore(view, file, entry);
+			this.startRestore(view, file, entry, content);
 		}).finally(() => {
 			state.loading = false;
 		});
 	}
 
-	private startRestore(view: MarkdownView, file: TFile, entry: PositionEntry) {
+	private startRestore(
+		view: MarkdownView,
+		file: TFile,
+		entry: PositionEntry,
+		expectedContent: string | null,
+	) {
 		this.cancelRestore();
 
 		const session: RestoreSession = {
 			view,
 			file,
 			entry,
+			expectedContent,
+			initialPreviewText: this.getPreviewText(view),
 			attempts: 0,
 			lastHeight: -1,
 			stable: 0,
+			appliedAttempt: null,
 			lastApplied: null,
 			timer: null,
 			detach: null,
@@ -333,6 +373,32 @@ export default class EinkPageTurnerPlugin extends Plugin {
 
 		this.attachRestoreCancel(session);
 		this.scheduleRestoreAttempt(session, 0);
+	}
+
+	private getPreviewText(view: MarkdownView): string | null {
+		try {
+			return view.previewMode?.get() ?? null;
+		} catch {
+			return null;
+		}
+	}
+
+	private isPreviewContentReady(
+		session: RestoreSession,
+		previewText: string | null,
+	): boolean {
+		if (session.expectedContent === null) return true;
+		if (previewText === null) return false;
+		if (previewText === session.expectedContent) return true;
+		// 文件内容可能被 Obsidian 做过格式归一化，只要已经从打开时的旧内容变成别的内容，也认为切换完成。
+		return (
+			session.initialPreviewText !== null &&
+			previewText !== session.initialPreviewText
+		);
+	}
+
+	private restoreDelay(attempts: number): number {
+		return Math.min(150 * attempts, 900);
 	}
 
 	private attachRestoreCancel(session: RestoreSession) {
@@ -372,55 +438,81 @@ export default class EinkPageTurnerPlugin extends Plugin {
 		}
 
 		session.attempts++;
-		if (session.attempts > 10) {
+		if (session.attempts > MAX_RESTORE_ATTEMPTS) {
 			this.finishRestore(session);
+			return;
+		}
+
+		const delay = this.restoreDelay(session.attempts);
+		const previewText = this.getPreviewText(view);
+
+		// 先确认阅读视图已经换成新笔记的内容。切换文件时旧笔记的 DOM 还会存在一小段时间，
+		// 如果这时就按旧内容计算滚动位置，会跳到错误的地方。
+		if (
+			session.attempts <= CONTENT_GATE_ATTEMPTS &&
+			!this.isPreviewContentReady(session, previewText)
+		) {
+			this.scheduleRestoreAttempt(session, delay);
 			return;
 		}
 
 		const scroller = this.getScrollContainer(view);
 		const max = scroller.scrollHeight - scroller.clientHeight;
 
-		if (session.lastApplied !== null) {
-			// 用户或其他程序（例如跳转标题、Obsidian 自带的标签位置恢复）改变了滚动位置，
-			// 不再继续往回拽。
-			if (Math.abs(scroller.scrollTop - session.lastApplied) > 8) {
-				this.finishRestore(session);
-				return;
-			}
+		if (session.lastApplied === null && scroller.scrollTop > 4) {
+			// 新内容还没换上来（旧笔记的滚动位置还在），或者 Obsidian 已经跳到了
+			// 某个明确位置（标题链接、标签页位置恢复）。先等，不要和它抢。
+			this.scheduleRestoreAttempt(session, delay);
+			return;
 		}
 
 		if (max <= 4) {
-			// 内容尚未渲染（scrollHeight 为 0）时继续等待；已渲染的短笔记无需恢复。
-			if (scroller.scrollHeight > 0 && session.attempts >= 2) {
-				this.finishRestore(session);
-				return;
-			}
-			this.scheduleRestoreAttempt(session, Math.min(150 * session.attempts, 800));
+			// 可能内容还没渲染出高度，也可能本来就是短笔记。多等一段时间，
+			// 避免长笔记在渲染完成前被误判成“不需要恢复”。
+			this.scheduleRestoreAttempt(session, delay);
 			return;
+		}
+
+		if (session.lastApplied !== null) {
+			const drift = scroller.scrollTop - session.lastApplied;
+			if (Math.abs(drift) > 8) {
+				if (scroller.scrollTop > 4) {
+					// 其他程序把滚动位置改到了非顶部（例如标题跳转），让位。
+					this.finishRestore(session);
+					return;
+				}
+				// 被重置回顶部（重新渲染/布局变化），继续纠偏。
+				session.stable = 0;
+			}
 		}
 
 		const target = this.resolveRestoreTarget(scroller, session.entry, max);
 		const heightChanged = scroller.scrollHeight !== session.lastHeight;
 		session.lastHeight = scroller.scrollHeight;
 
-		if (Math.abs(scroller.scrollTop - target) > 2) {
+		if (Math.abs(scroller.scrollTop - target) > 8) {
 			// 直接赋值 scrollTop 而不是 scrollTo，避免主题的 scroll-behavior 让墨水屏出现过渡动画。
 			scroller.scrollTop = target;
 			session.stable = 0;
 		} else if (heightChanged) {
-			// 高度刚变化（例如图片加载完成），再多等一轮确认位置。
+			// 高度刚变化（例如图片加载完成、渐进渲染补上高度），再多等几轮确认位置。
 			session.stable = 1;
 		} else {
 			session.stable++;
 		}
 		session.lastApplied = scroller.scrollTop;
+		if (session.appliedAttempt === null) session.appliedAttempt = session.attempts;
 
-		if (session.stable >= 2) {
+		if (
+			session.stable >= 3 ||
+			(session.appliedAttempt !== null &&
+				session.attempts - session.appliedAttempt >= 6)
+		) {
 			this.finishRestore(session);
 			return;
 		}
 
-		this.scheduleRestoreAttempt(session, Math.min(120 * session.attempts, 800));
+		this.scheduleRestoreAttempt(session, delay);
 	}
 
 	private resolveRestoreTarget(
