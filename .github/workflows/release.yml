@@ -1,0 +1,65 @@
+name: Release Obsidian plugin
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'manifest.json'
+      - 'main.js'
+      - 'styles.css'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./manifest.json').version")"
+          TAG="v${VERSION}"
+
+          # tag 触发时，确保 tag 与 manifest.json 的版本一致
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "${TAG}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} 与 manifest.json 版本 ${VERSION} 不一致" >&2
+            exit 1
+          fi
+
+          # 该版本已经发过 Release 就跳过（主分支后续提交不会重复发布）
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${TAG} 已存在，跳过。"
+            exit 0
+          fi
+
+          gh release create "${TAG}" main.js manifest.json styles.css \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${VERSION}" \
+            --generate-notes
