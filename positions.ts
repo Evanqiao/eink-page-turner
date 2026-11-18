@@ -11,8 +11,8 @@ export const DEFAULT_POSITION_FILE = 'EinkPageTurner/positions.json';
 const FILE_VERSION = 1;
 const ANCHOR_MAX_LENGTH = 80;
 
-/** 自动落盘间隔：阅读中每 10 分钟把最新位置写入文件，降低写盘和多端同步频率。 */
-export const AUTO_FLUSH_INTERVAL_MS = 10 * 60 * 1000;
+/** 自动落盘间隔：阅读中每 20 秒把最新位置写入文件，兼顾多端同步及时性与写盘/同步开销。 */
+export const AUTO_FLUSH_INTERVAL_MS = 20 * 1000;
 
 /** 文本锚点过短时容易匹配到错误位置，短于该长度则不使用锚点，退回比例恢复。 */
 export const MIN_ANCHOR_LENGTH = 12;
@@ -112,7 +112,7 @@ export class PositionStore {
 		this.dirty.clear();
 		this.removed.clear();
 
-		// 把内存中的记录全部标记为待写入，并立即迁移到新文件（这是用户主动改路径，不需要等 10 分钟）。
+		// 把内存中的记录全部标记为待写入，并立即迁移到新文件（这是用户主动改路径，不需要等落盘间隔）。
 		for (const key of this.entries.keys()) this.dirty.add(key);
 		if (this.entries.size > 0) void this.flush();
 	}
@@ -234,7 +234,7 @@ export class PositionStore {
 	}
 
 	private scheduleFlush(delay = AUTO_FLUSH_INTERVAL_MS): void {
-		// 保持「每 10 分钟写一次」的节奏：已有定时器时不重置，
+		// 保持「每 20 秒最多写一次」的节奏：已有定时器时不重置，
 		// 这样持续滚动也不会一直推迟落盘。切换笔记、切后台、关闭时另有强制落盘。
 		if (this.flushTimer !== null) return;
 		this.flushTimer = window.setTimeout(() => {

@@ -52,7 +52,7 @@ export class EinkPageTurnerSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('记住阅读位置')
-			.setDesc('记录每篇笔记在阅读模式下滚动到的位置，重新打开时自动恢复。位置最多每 10 分钟写盘一次，切换笔记或退出时立即保存，可随 Obsidian Sync 等同步。')
+			.setDesc('记录每篇笔记在阅读模式下滚动到的位置，重新打开时自动恢复。位置最多每 20 秒写盘一次，切换笔记或退出时立即保存，可随 Obsidian Sync 等同步。')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.rememberReadingPosition)
 				.onChange(async (value) => {
