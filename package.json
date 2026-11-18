@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-eink-page-turner",
-	"version": "1.1.2",
+	"version": "1.1.3",
 	"description": "专为安卓墨水屏设备优化的阅读翻页插件：点击屏幕左右侧翻页，并记住每篇笔记的阅读位置，可多端同步",
 	"main": "main.js",
 	"scripts": {
